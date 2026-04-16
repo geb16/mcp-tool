@@ -1,3 +1,9 @@
+"""Order and refund domain services.
+
+All read/write operations in this module are tenant-scoped and backed by the
+configured relational database.
+"""
+
 from __future__ import annotations
 
 from sqlalchemy import func, select
@@ -9,10 +15,19 @@ from enterprise_mcp.security.context import current_tenant_id
 
 
 def _tenant_id() -> str:
+    """Resolve the active tenant identifier from request context."""
     return current_tenant_id(settings.default_tenant_id)
 
 
 def get_order(order_id: str) -> OrderRow | None:
+    """Fetch a single order for the active tenant.
+
+    Args:
+        order_id: Order identifier.
+
+    Returns:
+        Matching order row, or ``None`` when not found.
+    """
     tenant_id = _tenant_id()
     with session_scope() as session:
         return session.scalar(
@@ -21,6 +36,14 @@ def get_order(order_id: str) -> OrderRow | None:
 
 
 def get_order_status(order_id: str) -> dict:
+    """Return a normalized order status payload.
+
+    Args:
+        order_id: Order identifier.
+
+    Returns:
+        Dictionary with ``found`` and order details when present.
+    """
     order = get_order(order_id)
     if not order:
         return {"found": False, "message": f"Order {order_id} not found."}
@@ -36,6 +59,15 @@ def get_order_status(order_id: str) -> dict:
 
 
 def create_refund(refund: RefundRequest) -> dict:
+    """Create a refund request when business rules allow it.
+
+    Args:
+        refund: Refund request payload.
+
+    Returns:
+        Result dictionary containing ``ok`` and either success metadata or
+        rejection message.
+    """
     tenant_id = _tenant_id()
 
     with session_scope() as session:
@@ -78,7 +110,7 @@ def create_refund(refund: RefundRequest) -> dict:
             )
             refund_request_id = f"RR-{refund.order_id}-{int(duplicate_count or 0) + 1}"
 
-        order.refundable = False # Mark the order as no longer refundable once a refund request is created
+        order.refundable = False
 
         session.add(
             RefundRequestRow(
@@ -100,6 +132,7 @@ def create_refund(refund: RefundRequest) -> dict:
 
 
 def get_return_policy() -> str:
+    """Return the static return policy text exposed as MCP resource."""
     return (
         "Returns are accepted within 30 days of delivery. "
         "Opened but unused items are eligible. "
