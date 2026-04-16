@@ -1,1 +1,4 @@
-"""Observability helpers for logging, tracing, metrics, and audit."""
+"""Observability package.
+
+Exposes helpers for request context propagation, metrics, logging, and audit.
+"""
