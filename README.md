@@ -1,174 +1,239 @@
-# MCP Enterprise (Production Baseline)
+# MCP Enterprise
 
-This project is now a production-style MCP service with:
+Production-style Python MCP service that demonstrates secure tool execution, approval workflows, tenant isolation, and observability with real infrastructure (PostgreSQL + Redis + Prometheus metrics).
 
-- API key middleware on HTTP transport
-- Structured JSON logs + audit logs per tool call
-- Request IDs and trace IDs
-- Redis read-cache for read tools/resources
-- PostgreSQL persistence (no in-memory demo store)
-- Per-tool Prometheus metrics
-- Rate limiting
-- RBAC + tenant isolation
-- CI pipeline (Ruff + pytest + Docker build)
-- Staging and production environment separation
+## Scope
+
+This repository provides:
+
+- MCP tools and resources over stdio and HTTP transports.
+- API-key authentication middleware for HTTP requests.
+- RBAC for read/write tool access.
+- Tenant isolation at middleware and data-query levels.
+- Human approval workflow for sensitive write actions.
+- Structured JSON logs with request and trace correlation.
+- Tool audit events and per-tool metrics.
+- Redis cache for read tools/resources.
+- PostgreSQL persistence for domain and portal workflows.
+- Development trainer UI and enterprise portal (customer + admin).
 
 ## Architecture
 
-- Transport: FastMCP (`/mcp`) over streamable HTTP
-- Security boundary: `RequestSecurityMiddleware`
-- Data: SQLAlchemy + PostgreSQL
-- Cache + rate limiter backend: Redis (memory fallback if unavailable)
-- Observability:
-  - logs to stderr in JSON
-  - audit logger emits `event=tool_call`
-  - Prometheus metrics at `/metrics`
+### Runtime Components
 
-## Enterprise Portal
+- `FastMCP` server and tool registration: `src/enterprise_mcp/mcp/common.py`
+- HTTP application and route wiring: `src/enterprise_mcp/mcp/http_server.py`
+- Security middleware (auth, role validation, rate limiting, request IDs): `src/enterprise_mcp/security/middleware.py`
+- Domain logic (orders/refunds): `src/enterprise_mcp/domain/orders.py`
+- Data access and models (SQLAlchemy): `src/enterprise_mcp/data/db.py`
+- Cache and rate-limit backend (Redis + fallback): `src/enterprise_mcp/data/cache.py`, `src/enterprise_mcp/security/rate_limit.py`
+- Observability (metrics, structured audit, context): `src/enterprise_mcp/observability/*`
+- Customer/Admin portal workflow: `src/enterprise_mcp/portal/*`
+- Trainer lab workflow: `src/enterprise_mcp/trainer/*`
 
-Two separated surfaces are provided:
+### Request Flow (HTTP `/mcp`)
 
-1. Customer surface: `http://localhost:8080/portal/chat`
-   - clean chat-only UI
-   - GDPR/compliance notice
-   - persistent conversation memory per session
-   - no customer-side approval controls
+1. `build_http_app()` builds the Starlette app and adds `RequestSecurityMiddleware`.
+2. Middleware sets `request_id`/`trace_id`, authenticates headers, validates role/tenant, applies rate limits.
+3. MCP tool entry calls `_execute_tool()` in `mcp/common.py`.
+4. `_execute_tool()` enforces RBAC via `ensure_tool_access()`.
+5. Tool executes domain logic, with Redis read-cache where applicable.
+6. Tool emits metrics and structured audit event.
+7. Middleware appends `x-request-id` and `x-trace-id` response headers.
 
-2. Admin/staff surface: `http://localhost:8080/portal/admin`
-   - role assignment for agent behavior per tenant
-   - pending approval queue for write operations
-   - approve/reject controls
-   - observability summary (metrics, DB rows, Redis keys, tool audit events)
+## Repository Map
 
-Admin API calls require:
+### Entrypoints
 
-- `x-api-key`
-- `x-admin-api-key`
-- `x-role: admin`
-- `x-tenant-id`
+- `main.py`: stdio runtime entrypoint (logging + DB init + MCP run).
+- `src/enterprise_mcp/mcp/stdio_server.py`: alternate stdio launch entrypoint.
+- `src/enterprise_mcp/mcp/http_server.py`: HTTP app factory and local server startup.
 
-## Step-by-Step Training Path
+### Configuration and Models
 
-### Interactive Day-1 Lab UI
+- `src/enterprise_mcp/config.py`: environment configuration and derived settings.
+- `src/enterprise_mcp/models.py`: Pydantic request models for domain/tool contracts.
+- `src/enterprise_mcp/approval.py`: read-only/dangerous tool classification helpers.
 
-Open `http://localhost:8080/trainer` after startup.
+### Data Layer
 
-What this gives you:
+- `src/enterprise_mcp/data/db.py`: SQLAlchemy models, session scope, DB bootstrap/seed.
+- `src/enterprise_mcp/data/cache.py`: Redis JSON cache wrapper with safe fallback.
 
-- Chat panel that calls a real model with MCP tools.
-- Live Prometheus counters/histograms focused on MCP behavior.
-- Live PostgreSQL snapshots (`orders`, `refund_requests`).
-- Live Redis cache key inspection.
-- Optional runtime OpenAI key input in the UI (stored in browser session only).
+### Domain Layer
 
-Training flow:
+- `src/enterprise_mcp/domain/orders.py`: tenant-scoped order lookup, refund creation, policy resource data.
 
-1. Use role `viewer` and run a refund prompt to observe RBAC denial.
-2. Switch to `support_manager` and run refund again to observe success.
-3. Watch:
-   - `mcp_tool_calls_total` status labels change (`forbidden` vs `success`)
-   - cache keys appear/disappear
-   - refund rows inserted in PostgreSQL
+### MCP Layer
 
-If model chat fails:
+- `src/enterprise_mcp/mcp/common.py`: MCP tools/resources with caching, RBAC, metrics, and audit integration.
+- `src/enterprise_mcp/mcp/http_server.py`: HTTP routes (`/mcp`, `/healthz`, `/metrics`, trainer, portal).
 
-1. Set `OPENAI_API_KEY` in server env, or
-2. Paste a valid API key into the UI runtime key field.
+### Security Layer
 
-### Step 1: Run local stack (real infra)
+- `src/enterprise_mcp/security/middleware.py`: API-key auth, tenant/role validation, rate limiting, trace headers.
+- `src/enterprise_mcp/security/rbac.py`: read/write role authorization checks.
+- `src/enterprise_mcp/security/rate_limit.py`: Redis/in-memory rate limiter.
+- `src/enterprise_mcp/security/context.py`: current tenant/role helpers from request context.
+
+### Observability Layer
+
+- `src/enterprise_mcp/logging.py`: JSON logging formatter with request context fields.
+- `src/enterprise_mcp/observability/context.py`: context variables (`request_id`, `trace_id`, `tenant_id`, `role`, `principal`).
+- `src/enterprise_mcp/observability/metrics.py`: Prometheus counters/histograms and helpers.
+- `src/enterprise_mcp/observability/audit.py`: per-tool audit event emission.
+- `src/enterprise_mcp/observability/events.py`: in-memory event buffer for admin/trainer views.
+
+### UIs and APIs
+
+- `src/enterprise_mcp/trainer/*`: dev/test learning interface + APIs.
+- `src/enterprise_mcp/portal/*`: customer/admin portal UIs, APIs, and approval orchestration.
+
+### Tests
+
+- `tests/conftest.py`: isolated test environment and DB reset fixture.
+- `tests/test_http_security.py`: middleware auth/tracing coverage.
+- `tests/test_orders.py`: domain behavior coverage.
+- `tests/test_rbac.py`: RBAC write-block coverage.
+- `tests/test_tenant_isolation.py`: tenant data isolation coverage.
+- `tests/test_tool_smoke.py`: MCP smoke coverage.
+- `tests/test_trainer_ui.py`: trainer endpoint coverage.
+- `tests/test_portal.py`: portal API and approval workflow coverage.
+
+## Environment Model
+
+### Files
+
+- `.env.example`
+- `.env.staging.example`
+- `.env.prod.example`
+
+### Compose Overlays
+
+- `docker-compose.yml` (base/dev)
+- `docker-compose.staging.yml`
+- `docker-compose.prod.yml`
+
+### Core Variables
+
+- `APP_ENV` = `dev | test | staging | prod`
+- `MCP_API_KEY` or `MCP_API_KEYS`
+- `OPENAI_API_KEY`
+- `DATABASE_URL`
+- `REDIS_URL`
+- `REQUIRE_TENANT_HEADER`
+- `RBAC_READ_ROLES`
+- `RBAC_WRITE_ROLES`
+
+## Local Run
 
 ```bash
 docker compose up --build
 ```
 
-Services:
+Endpoints:
 
-- MCP HTTP server: `http://localhost:8080/mcp`
+- MCP HTTP: `http://localhost:8080/mcp`
 - Health: `http://localhost:8080/healthz`
 - Metrics: `http://localhost:8080/metrics`
-- PostgreSQL: `localhost:5432`
-- Redis: `localhost:6379`
+- Trainer UI: `http://localhost:8080/trainer` (dev/test only)
+- Customer Portal UI: `http://localhost:8080/portal/chat`
+- Admin Portal UI: `http://localhost:8080/portal/admin`
 
-### Step 2: Understand request security
+## API Contracts
 
-All non-public endpoints require:
+### Common Headers (Protected Endpoints)
 
-- `x-api-key`
-- `x-tenant-id` (tenant isolation)
-- `x-role` (RBAC)
+- `x-api-key: <api key>`
+- `x-tenant-id: <tenant id>` (if required by config)
+- `x-role: <viewer|support_agent|support_manager|admin>`
 
-Every response includes:
+### Response Correlation Headers
 
 - `x-request-id`
 - `x-trace-id`
 
-### Step 3: Understand RBAC decisions
+### Portal Admin Headers
 
-- Read tools: roles in `RBAC_READ_ROLES`
-- Write tools: roles in `RBAC_WRITE_ROLES`
-- Enforced in `security/rbac.py` and invoked by every tool execution.
+- `x-admin-api-key: <api key>`
+- `x-api-key: <api key>`
+- `x-role: admin`
+- `x-tenant-id: <tenant>`
 
-### Step 4: Understand persistence and tenancy
+## Security Behavior
 
-Orders/refunds are persisted in PostgreSQL and scoped by `tenant_id`.
-All queries in `domain/orders.py` are tenant-scoped.
+- Invalid API key: `401`
+- Missing required tenant header: `400`
+- Unknown role: `403`
+- Rate limit exceeded: `429`
+- In `staging/prod`, no configured API keys is treated as server misconfiguration (`500`).
 
-### Step 5: Understand cache and invalidation
+## Data and Consistency Rules
 
-- `get_order_status_tool` and return policy use Redis cache.
-- Refund creation invalidates order status cache key.
+- All domain reads/writes are tenant-scoped.
+- Refund creation requires:
+  - existing order
+  - refundable order
+  - explicit human approval flag
+- Successful refund creation sets `order.refundable = False`.
+- Successful refund creation invalidates order-status cache key.
 
-### Step 6: Understand observability
+## Observability
 
-- Tool calls record:
-  - latency histogram
-  - outcome counter
-  - structured audit event
-- HTTP traffic records request count + latency.
+### Metrics
 
-### Step 7: CI quality gate
+- `mcp_http_requests_total`
+- `mcp_http_request_latency_seconds`
+- `mcp_tool_calls_total`
+- `mcp_tool_call_latency_seconds`
+- `mcp_cache_events_total`
+- `mcp_rate_limit_events_total`
 
-GitHub Actions workflow runs:
+### Logging
 
-1. `ruff check .`
-2. `pytest -q`
-3. `docker build`
+- JSON logs to stderr with:
+  - timestamp, level, logger, message, `app_env`
+  - `request_id`, `trace_id`, `tenant_id`, `role`, `principal`
 
-### Step 8: Environment promotion model
+### Audit Events
 
-Templates:
+- One structured event per tool execution:
+  - tool name, status, duration, arguments, outcome, request/trace/tenant/role context.
 
-- `.env.example` (dev)
-- `.env.staging.example`
-- `.env.prod.example`
+## Quality and CI
 
-Compose overlays:
-
-- `docker-compose.staging.yml`
-- `docker-compose.prod.yml`
-
-Example:
-
-```bash
-# staging
-docker compose -f docker-compose.yml -f docker-compose.staging.yml up --build
-
-# prod
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
-```
-
-## Suggested Engineering Progression
-
-1. Add Alembic migrations (replace `create_all` bootstrap).
-2. Move API keys to secret manager and enable key rotation schedule.
-3. Replace API keys with OAuth/JWT verifier for user-level identity.
-4. Emit OpenTelemetry traces and export to your APM.
-5. Add load tests for rate limit and cache hit ratio.
-
-## Local Quality Commands
+Local commands:
 
 ```bash
 ruff check .
 pytest -q
 docker build -t mcp-enterprise:local .
 ```
+
+CI pipeline includes:
+
+1. Ruff checks
+2. Pytest suite
+3. Docker build validation
+
+## Acknowledgment
+
+This implementation is built around the Model Context Protocol (MCP) ecosystem and uses FastMCP, Starlette, SQLAlchemy, Redis, and Prometheus client libraries.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
+
+## Feature Status (Current Build)
+
+- API key auth middleware: implemented
+- Structured tool-call audit logs: implemented
+- Request ID and trace ID propagation: implemented
+- Redis cache for read paths: implemented
+- PostgreSQL persistence: implemented
+- Per-tool metrics: implemented
+- Rate limiting: implemented
+- RBAC + tenant isolation: implemented
+- CI checks (Ruff + pytest + Docker build): implemented
+- Staging/prod environment overlays: implemented
+- Customer/admin split portal with approval queue: implemented
