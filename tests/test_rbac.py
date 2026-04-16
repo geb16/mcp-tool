@@ -1,8 +1,11 @@
+"""RBAC tests for write-tool authorization enforcement."""
+
 from enterprise_mcp.mcp.common import create_refund_request
 from enterprise_mcp.observability.context import role_var, tenant_id_var
 
 
 def test_write_tool_blocked_for_viewer():
+    """Viewer role should be blocked from write tool execution."""
     role_token = role_var.set("viewer")
     tenant_token = tenant_id_var.set("tenant-a")
     try:

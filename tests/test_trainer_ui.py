@@ -1,3 +1,5 @@
+"""Trainer endpoints tests for runtime behavior and payload shape."""
+
 from starlette.testclient import TestClient
 from types import SimpleNamespace
 
@@ -5,6 +7,7 @@ from enterprise_mcp.mcp.http_server import build_http_app
 
 
 def test_trainer_page_available_in_test_env():
+    """Trainer page should load in test environment."""
     client = TestClient(build_http_app())
     response = client.get("/trainer")
     assert response.status_code == 200
@@ -12,6 +15,7 @@ def test_trainer_page_available_in_test_env():
 
 
 def test_trainer_state_returns_observability_payload():
+    """Trainer state endpoint should return expected observability keys."""
     client = TestClient(build_http_app())
     response = client.get("/trainer/api/state")
     assert response.status_code == 200
@@ -25,9 +29,11 @@ def test_trainer_state_returns_observability_payload():
 
 
 def test_trainer_chat_runtime_api_key_passed(monkeypatch):
+    """Runtime API key should be forwarded to trainer chat service."""
     captured: dict[str, str] = {}
 
     def fake_run_model_chat(*, message: str, tenant_id: str, role: str, openai_api_key: str = ""):
+        """Return a deterministic fake model result for test assertions."""
         captured["message"] = message
         captured["tenant_id"] = tenant_id
         captured["role"] = role
@@ -53,6 +59,7 @@ def test_trainer_chat_runtime_api_key_passed(monkeypatch):
 
 
 def test_trainer_direct_tool_viewer_blocked_write():
+    """Direct write tool should be rejected for viewer role."""
     client = TestClient(build_http_app())
 
     response = client.post(
