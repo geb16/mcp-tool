@@ -1,0 +1,10 @@
+services:
+  mcp-http:
+    env_file:
+      - .env.prod.example
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2048M

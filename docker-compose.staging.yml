@@ -1,0 +1,9 @@
+services:
+  mcp-http:
+    env_file:
+      - .env.staging.example
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
