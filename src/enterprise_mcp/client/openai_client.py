@@ -1,3 +1,9 @@
+"""Example OpenAI Responses client for MCP integration testing.
+
+The script demonstrates model-to-MCP tool invocation and explicit approval
+handling for sensitive tool calls.
+"""
+
 import json
 
 from openai import OpenAI
@@ -10,6 +16,11 @@ client = OpenAI(api_key=settings.openai_api_key)
 
 
 def ask_agent(user_text: str) -> None:
+    """Run one agent turn against local MCP tools.
+
+    Args:
+        user_text: End-user prompt sent to the model.
+    """
     response = client.responses.create(
         model=MODEL,
         input=user_text,
