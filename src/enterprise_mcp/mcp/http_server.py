@@ -1,3 +1,9 @@
+"""HTTP runtime entrypoints and route wiring.
+
+This module builds the Starlette app used for streamable MCP HTTP transport
+plus trainer/portal auxiliary routes.
+"""
+
 from starlette.responses import PlainTextResponse, Response
 import uvicorn
 
@@ -20,15 +26,22 @@ from enterprise_mcp.trainer.http import trainer_chat, trainer_direct_tool, train
 
 
 async def healthz(_request) -> PlainTextResponse:
+    """Return a lightweight health probe response."""
     return PlainTextResponse("ok")
 
 
 async def metrics(_request) -> Response:
+    """Expose Prometheus metrics payload."""
     payload, content_type = metrics_response()
     return Response(content=payload, media_type=content_type)
 
 
 def build_http_app():
+    """Build and configure the HTTP application.
+
+    Returns:
+        Starlette application with routes and security middleware attached.
+    """
     app = mcp.streamable_http_app()
     app.add_route("/healthz", healthz, methods=["GET"])
     app.add_route("/metrics", metrics, methods=["GET"])
