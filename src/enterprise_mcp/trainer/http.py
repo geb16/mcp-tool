@@ -1,3 +1,9 @@
+"""Trainer HTTP handlers.
+
+Routes in this module expose a dev/test teaching surface for model/tool runs,
+direct tool execution, and live observability snapshots.
+"""
+
 from __future__ import annotations
 
 from functools import partial
@@ -15,6 +21,7 @@ logger = get_logger(__name__)
 
 
 def _ensure_dev_mode() -> JSONResponse | None:
+    """Block trainer routes outside dev/test environments."""
     if settings.app_env not in {"dev", "test"}:
         return JSONResponse(
             {"error": "Trainer UI is disabled outside dev/test environments."},
@@ -24,6 +31,7 @@ def _ensure_dev_mode() -> JSONResponse | None:
 
 
 async def trainer_page(_request: Request) -> HTMLResponse:
+    """Serve trainer UI page when enabled."""
     blocked = _ensure_dev_mode()
     if blocked:
         return HTMLResponse("Trainer UI is disabled outside dev/test environments.", status_code=blocked.status_code)
@@ -31,6 +39,7 @@ async def trainer_page(_request: Request) -> HTMLResponse:
 
 
 async def trainer_chat(request: Request) -> JSONResponse:
+    """Run one model chat turn through trainer service."""
     blocked = _ensure_dev_mode()
     if blocked:
         return blocked
@@ -69,6 +78,7 @@ async def trainer_chat(request: Request) -> JSONResponse:
 
 
 async def trainer_state(_request: Request) -> JSONResponse:
+    """Return live metrics/cache/database snapshot for trainer UI."""
     blocked = _ensure_dev_mode()
     if blocked:
         return blocked
@@ -77,6 +87,7 @@ async def trainer_state(_request: Request) -> JSONResponse:
 
 
 async def trainer_direct_tool(request: Request) -> JSONResponse:
+    """Execute one MCP tool directly using supplied role and tenant."""
     blocked = _ensure_dev_mode()
     if blocked:
         return blocked
