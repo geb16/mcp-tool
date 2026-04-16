@@ -1,3 +1,9 @@
+"""Database models and session management.
+
+This module defines SQLAlchemy ORM models used by tools, domain services, and
+portal workflows, plus helpers for session scope and bootstrap seeding.
+"""
+
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -10,10 +16,14 @@ from enterprise_mcp.config import settings
 
 
 class Base(DeclarativeBase):
+    """Declarative base class for all ORM models."""
+
     pass
 
 
 class OrderRow(Base):
+    """Persisted order state scoped by tenant."""
+
     __tablename__ = "orders"
     __table_args__ = (UniqueConstraint("tenant_id", "order_id", name="uq_orders_tenant_order"),)
 
@@ -27,6 +37,8 @@ class OrderRow(Base):
 
 
 class RefundRequestRow(Base):
+    """Persisted refund request records."""
+
     __tablename__ = "refund_requests"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -39,6 +51,8 @@ class RefundRequestRow(Base):
 
 
 class ChatSessionRow(Base):
+    """Customer chat session metadata."""
+
     __tablename__ = "chat_sessions"
     __table_args__ = (UniqueConstraint("tenant_id", "session_id", name="uq_chat_sessions_tenant_session"),)
 
@@ -51,6 +65,8 @@ class ChatSessionRow(Base):
 
 
 class ChatMessageRow(Base):
+    """Individual chat messages within a customer session."""
+
     __tablename__ = "chat_messages"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -62,6 +78,8 @@ class ChatMessageRow(Base):
 
 
 class ApprovalRequestRow(Base):
+    """Queued approval requests for write tool execution."""
+
     __tablename__ = "approval_requests"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -80,6 +98,8 @@ class ApprovalRequestRow(Base):
 
 
 class TenantAgentConfigRow(Base):
+    """Tenant-level configuration for assigned agent role."""
+
     __tablename__ = "tenant_agent_config"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -94,6 +114,14 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expi
 
 @contextmanager
 def session_scope() -> Session:
+    """Provide a transactional SQLAlchemy session scope.
+
+    Yields:
+        Active SQLAlchemy session.
+
+    Raises:
+        Exception: Re-raises any exception after rolling back.
+    """
     session = SessionLocal()
     try:
         yield session
@@ -106,6 +134,7 @@ def session_scope() -> Session:
 
 
 def init_database() -> None:
+    """Create schema and optionally seed default tenant data."""
     Base.metadata.create_all(bind=engine)
 
     with session_scope() as session:

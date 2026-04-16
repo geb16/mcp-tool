@@ -1,3 +1,9 @@
+"""Redis-backed cache helpers.
+
+This module provides a small JSON cache adapter used by read tools and
+rate-limiting code paths.
+"""
+
 import json
 from dataclasses import dataclass
 
@@ -11,10 +17,18 @@ logger = get_logger(__name__)
 
 @dataclass(slots=True)
 class CacheClient:
+    """Thin wrapper around a Redis client with graceful fallback."""
+
     client: redis.Redis | None
 
     @classmethod
     def from_settings(cls) -> "CacheClient":
+        """Create a cache client from application settings.
+
+        Returns:
+            CacheClient configured with Redis when available; otherwise a
+            disabled client (`client=None`).
+        """
         try:
             redis_client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
             redis_client.ping()
@@ -24,6 +38,14 @@ class CacheClient:
             return cls(client=None)
 
     def get_json(self, key: str) -> dict | None:
+        """Get and decode a JSON object from cache.
+
+        Args:
+            key: Cache key.
+
+        Returns:
+            Parsed JSON object when present; otherwise ``None``.
+        """
         if not self.client:
             return None
         value = self.client.get(key)
@@ -32,12 +54,24 @@ class CacheClient:
         return json.loads(value)
 
     def set_json(self, key: str, value: dict, ttl_seconds: int | None = None) -> None:
+        """Store a JSON object with TTL.
+
+        Args:
+            key: Cache key.
+            value: JSON-serializable dictionary payload.
+            ttl_seconds: Optional TTL override. Defaults to configured TTL.
+        """
         if not self.client:
             return
         ttl = ttl_seconds or settings.cache_ttl_seconds
         self.client.setex(key, ttl, json.dumps(value))
 
     def delete(self, *keys: str) -> None:
+        """Delete one or more cache keys.
+
+        Args:
+            *keys: Keys to delete.
+        """
         if not self.client or not keys:
             return
         self.client.delete(*keys)
