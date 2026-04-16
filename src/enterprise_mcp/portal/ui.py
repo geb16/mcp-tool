@@ -1,3 +1,8 @@
+"""Embedded portal UI templates.
+
+Defines static HTML/CSS/JS strings for customer chat and admin console pages.
+"""
+
 CUSTOMER_HTML = """
 <!DOCTYPE html>
 <html lang=\"en\">

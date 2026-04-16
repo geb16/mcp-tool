@@ -1,3 +1,8 @@
+"""Embedded trainer UI template.
+
+Contains static HTML/CSS/JS used by the interactive day-1 training surface.
+"""
+
 TRAINER_HTML = """
 <!DOCTYPE html>
 <html lang=\"en\">
