@@ -1,3 +1,9 @@
+"""Trainer runtime orchestration.
+
+This module executes model-driven tool loops for the training UI and returns
+live operational snapshots (metrics, database, cache) for learning workflows.
+"""
+
 from __future__ import annotations
 
 import json
@@ -51,12 +57,28 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 
 @dataclass(slots=True)
 class ChatResult:
+    """Result payload for one trainer chat execution."""
+
     answer: str
     model: str
     tool_trace: list[dict[str, Any]]
 
 
 def run_model_chat(*, message: str, tenant_id: str, role: str, openai_api_key: str = "") -> ChatResult:
+    """Run model chat with tool-calling loop for trainer UI.
+
+    Args:
+        message: User prompt.
+        tenant_id: Tenant context for tool execution.
+        role: Role used by RBAC checks.
+        openai_api_key: Optional runtime API key override.
+
+    Returns:
+        ChatResult containing final model answer and tool trace.
+
+    Raises:
+        RuntimeError: If no OpenAI API key is configured.
+    """
     api_key = openai_api_key.strip() or settings.openai_api_key
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not configured.")
@@ -99,6 +121,16 @@ def run_model_chat(*, message: str, tenant_id: str, role: str, openai_api_key: s
 def _collect_tool_outputs(
     response, *, tenant_id: str, role: str
 ) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
+    """Extract function calls from a model response and execute them.
+
+    Args:
+        response: OpenAI response object.
+        tenant_id: Tenant context for tool execution.
+        role: Role context for RBAC checks.
+
+    Returns:
+        Tuple of function_call_output items and normalized tool-call trace.
+    """
     outputs: list[dict[str, str]] = []
     calls: list[dict[str, Any]] = []
 
@@ -141,6 +173,17 @@ def _collect_tool_outputs(
 
 
 def _execute_local_tool(tool_name: str, arguments: dict[str, Any], *, tenant_id: str, role: str) -> dict[str, Any]:
+    """Execute one local MCP tool within trainer context.
+
+    Args:
+        tool_name: Target tool name.
+        arguments: Tool arguments.
+        tenant_id: Tenant context.
+        role: Role context.
+
+    Returns:
+        Tool result payload.
+    """
     tenant_token = tenant_id_var.set(tenant_id)
     role_token = role_var.set(role)
     principal_token = principal_var.set("trainer_ui")
@@ -166,10 +209,22 @@ def _execute_local_tool(tool_name: str, arguments: dict[str, Any], *, tenant_id:
 def run_direct_tool(
     *, tool_name: str, arguments: dict[str, Any], tenant_id: str, role: str
 ) -> dict[str, Any]:
+    """Run a single tool call without model loop.
+
+    Args:
+        tool_name: Target tool name.
+        arguments: Tool argument payload.
+        tenant_id: Tenant context.
+        role: Role context.
+
+    Returns:
+        Tool result payload.
+    """
     return _execute_local_tool(tool_name, arguments, tenant_id=tenant_id, role=role)
 
 
 def _get_value(item: Any, key: str) -> Any:
+    """Read an attribute/key from object-like or dict-like values."""
     if hasattr(item, key):
         return getattr(item, key)
     if isinstance(item, dict):
@@ -178,6 +233,11 @@ def _get_value(item: Any, key: str) -> Any:
 
 
 def snapshot_state() -> dict[str, object]:
+    """Return trainer-side observability and data snapshot.
+
+    Returns:
+        Dictionary including filtered metrics, cache keys, and recent rows.
+    """
     payload, _content_type = metrics_response()
     metrics_text = payload.decode("utf-8", errors="replace")
 
@@ -224,6 +284,7 @@ def snapshot_state() -> dict[str, object]:
 
 
 def _interesting_metrics(metrics_text: str) -> list[str]:
+    """Filter metrics output to lines used in trainer walkthroughs."""
     allowed_prefixes = (
         "mcp_http_requests_total",
         "mcp_http_request_latency_seconds_count",
