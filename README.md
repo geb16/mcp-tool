@@ -24,6 +24,29 @@ This project is now a production-style MCP service with:
   - audit logger emits `event=tool_call`
   - Prometheus metrics at `/metrics`
 
+## Enterprise Portal
+
+Two separated surfaces are provided:
+
+1. Customer surface: `http://localhost:8080/portal/chat`
+   - clean chat-only UI
+   - GDPR/compliance notice
+   - persistent conversation memory per session
+   - no customer-side approval controls
+
+2. Admin/staff surface: `http://localhost:8080/portal/admin`
+   - role assignment for agent behavior per tenant
+   - pending approval queue for write operations
+   - approve/reject controls
+   - observability summary (metrics, DB rows, Redis keys, tool audit events)
+
+Admin API calls require:
+
+- `x-api-key`
+- `x-admin-api-key`
+- `x-role: admin`
+- `x-tenant-id`
+
 ## Step-by-Step Training Path
 
 ### Interactive Day-1 Lab UI
