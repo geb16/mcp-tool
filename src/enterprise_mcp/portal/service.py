@@ -1,3 +1,9 @@
+"""Portal orchestration services.
+
+This module coordinates customer chat sessions, approval queue workflows,
+admin snapshots, and tenant-level agent-role configuration.
+"""
+
 from __future__ import annotations
 
 import json
@@ -81,6 +87,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 
 @dataclass(slots=True)
 class CustomerChatResult:
+    """Customer chat execution result."""
+
     session_id: str
     answer: str
     model: str
@@ -90,6 +98,8 @@ class CustomerChatResult:
 
 @dataclass(slots=True)
 class AdminDecisionResult:
+    """Result of an admin approval decision."""
+
     ok: bool
     approval_id: str
     status: str
@@ -103,6 +113,20 @@ def customer_chat(
     tenant_id: str,
     openai_api_key: str = "",
 ) -> CustomerChatResult:
+    """Execute one customer chat turn with tool-calling support.
+
+    Args:
+        message: Customer message text.
+        session_id: Existing session ID or empty for a new session.
+        tenant_id: Tenant identifier.
+        openai_api_key: Optional runtime API key override.
+
+    Returns:
+        CustomerChatResult with response text, session metadata, and tool trace.
+
+    Raises:
+        RuntimeError: If no OpenAI API key is configured.
+    """
     api_key = openai_api_key.strip() or settings.openai_api_key
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not configured.")
@@ -177,6 +201,17 @@ def customer_history(
     after_id: int = 0,
     limit: int = MAX_HISTORY_PAGE_SIZE,
 ) -> list[dict[str, Any]]:
+    """Return ordered chat history entries for a session.
+
+    Args:
+        tenant_id: Tenant identifier.
+        session_id: Session identifier.
+        after_id: Return only messages with ID greater than this value.
+        limit: Maximum number of rows to return.
+
+    Returns:
+        Ordered message dictionaries.
+    """
     page_size = max(1, min(limit, MAX_HISTORY_PAGE_SIZE))
     with session_scope() as session:
         query = select(ChatMessageRow).where(
@@ -200,6 +235,14 @@ def customer_history(
 
 
 def admin_snapshot(*, tenant_id: str) -> dict[str, Any]:
+    """Build dashboard snapshot for admin UI.
+
+    Args:
+        tenant_id: Tenant identifier.
+
+    Returns:
+        Metrics lines, recent database rows, cache keys, and audit events.
+    """
     payload, _content_type = metrics_response()
     metrics_text = payload.decode("utf-8", errors="replace")
 
@@ -239,6 +282,15 @@ def admin_snapshot(*, tenant_id: str) -> dict[str, Any]:
 
 
 def set_agent_role(*, tenant_id: str, role: str) -> dict[str, Any]:
+    """Persist tenant-specific assigned agent role.
+
+    Args:
+        tenant_id: Tenant identifier.
+        role: Role to assign.
+
+    Returns:
+        Confirmation payload.
+    """
     with session_scope() as session:
         config = session.scalar(
             select(TenantAgentConfigRow).where(TenantAgentConfigRow.tenant_id == tenant_id)
@@ -261,6 +313,18 @@ def decide_approval(
     executor_role: str,
     decision_note: str = "",
 ) -> AdminDecisionResult:
+    """Apply admin approval decision and optionally execute queued tool call.
+
+    Args:
+        approval_id: Approval request identifier.
+        approve: Decision flag.
+        decided_by: Staff principal identifier.
+        executor_role: Role used for actual tool execution.
+        decision_note: Optional decision note.
+
+    Returns:
+        AdminDecisionResult with final status and execution result.
+    """
     with session_scope() as session:
         approval = session.scalar(
             select(ApprovalRequestRow).where(ApprovalRequestRow.approval_id == approval_id)
@@ -346,6 +410,16 @@ def _collect_customer_tool_outputs(
     tenant_id: str,
     session_id: str,
 ) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
+    """Process model function-calls for customer workflow.
+
+    Args:
+        response: OpenAI response object.
+        tenant_id: Tenant identifier.
+        session_id: Customer session identifier.
+
+    Returns:
+        Tuple of function_call_output items and tool trace entries.
+    """
     outputs: list[dict[str, str]] = []
     calls: list[dict[str, Any]] = []
 
@@ -418,6 +492,7 @@ def _execute_tool_for_tenant(
     role: str,
     principal: str,
 ) -> dict[str, Any]:
+    """Execute one MCP tool under explicit tenant/role/principal context."""
     tenant_token = tenant_id_var.set(tenant_id)
     role_token = role_var.set(role)
     principal_token = principal_var.set(principal)
@@ -447,6 +522,7 @@ def _queue_approval(
     tool_name: str,
     arguments: dict[str, Any],
 ) -> ApprovalRequestRow:
+    """Insert a pending approval request row."""
     approval = ApprovalRequestRow(
         approval_id=f"APR-{uuid.uuid4().hex[:10].upper()}",
         tenant_id=tenant_id,
@@ -462,6 +538,7 @@ def _queue_approval(
 
 
 def _get_or_create_session(*, session_id: str, tenant_id: str) -> str:
+    """Resolve an existing session or create a new one."""
     maybe_session = session_id.strip() if session_id else ""
     if maybe_session:
         with session_scope() as session:
@@ -487,6 +564,11 @@ def _get_or_create_session(*, session_id: str, tenant_id: str) -> str:
 
 
 def _save_message(*, tenant_id: str, session_id: str, role: str, content: str) -> int:
+    """Insert a chat message row.
+
+    Returns:
+        Inserted message database ID.
+    """
     with session_scope() as session:
         row = ChatMessageRow(
             tenant_id=tenant_id,
@@ -500,6 +582,7 @@ def _save_message(*, tenant_id: str, session_id: str, role: str, content: str) -
 
 
 def _touch_session(*, tenant_id: str, session_id: str) -> None:
+    """Update session ``updated_at`` timestamp."""
     with session_scope() as session:
         session_row = session.scalar(
             select(ChatSessionRow).where(
@@ -512,6 +595,7 @@ def _touch_session(*, tenant_id: str, session_id: str) -> None:
 
 
 def _load_history(*, tenant_id: str, session_id: str) -> list[dict[str, str]]:
+    """Load recent user/assistant messages for model context."""
     with session_scope() as session:
         rows = session.scalars(
             select(ChatMessageRow)
@@ -532,6 +616,7 @@ def _load_history(*, tenant_id: str, session_id: str) -> list[dict[str, str]]:
 
 
 def _get_agent_role(*, tenant_id: str) -> str:
+    """Return assigned tenant agent role or default role."""
     with session_scope() as session:
         config = session.scalar(
             select(TenantAgentConfigRow).where(TenantAgentConfigRow.tenant_id == tenant_id)
@@ -542,6 +627,7 @@ def _get_agent_role(*, tenant_id: str) -> str:
 
 
 def _should_attach_gdpr_notice(*, tenant_id: str, session_id: str) -> bool:
+    """Return whether GDPR notice should be appended for this session."""
     with session_scope() as session:
         first_assistant = session.scalar(
             select(ChatMessageRow.id)
@@ -562,6 +648,7 @@ def _build_decision_customer_message(
     result: dict[str, Any],
     decision_note: str,
 ) -> str:
+    """Build customer-facing message for an admin decision outcome."""
     if approved:
         if result.get("ok") is False:
             reason = str(result.get("message") or "The request could not be completed.")
@@ -588,6 +675,7 @@ def _build_decision_customer_message(
 
 
 def _safe_json_load(raw: str | None) -> dict[str, Any]:
+    """Parse JSON object safely, returning empty dict on failure."""
     if not raw:
         return {}
     try:
@@ -600,6 +688,7 @@ def _safe_json_load(raw: str | None) -> dict[str, Any]:
 
 
 def _get_value(item: Any, key: str) -> Any:
+    """Read value by attribute or dict key from heterogeneous objects."""
     if hasattr(item, key):
         return getattr(item, key)
     if isinstance(item, dict):
@@ -608,6 +697,7 @@ def _get_value(item: Any, key: str) -> Any:
 
 
 def _interesting_metrics(metrics_text: str) -> list[str]:
+    """Filter Prometheus exposition to portal-relevant metric lines."""
     allowed_prefixes = (
         "mcp_http_requests_total",
         "mcp_http_request_latency_seconds_count",
@@ -626,6 +716,7 @@ def _interesting_metrics(metrics_text: str) -> list[str]:
 
 
 def _order_to_dict(row: OrderRow) -> dict[str, Any]:
+    """Serialize an order row into response dictionary."""
     return {
         "id": row.id,
         "tenant_id": row.tenant_id,
@@ -638,6 +729,7 @@ def _order_to_dict(row: OrderRow) -> dict[str, Any]:
 
 
 def _refund_to_dict(row: RefundRequestRow) -> dict[str, Any]:
+    """Serialize a refund row into response dictionary."""
     return {
         "id": row.id,
         "refund_request_id": row.refund_request_id,
@@ -650,6 +742,7 @@ def _refund_to_dict(row: RefundRequestRow) -> dict[str, Any]:
 
 
 def _approval_to_dict(row: ApprovalRequestRow) -> dict[str, Any]:
+    """Serialize an approval row into response dictionary."""
     return {
         "approval_id": row.approval_id,
         "tenant_id": row.tenant_id,
