@@ -1,4 +1,9 @@
-# this file defines the MCP tools and resources, and the core logic for executing them with observability and access control. The actual business logic for each tool should be implemented in the domain layer (e.g. enterprise_mcp.domain.orders) and imported here.
+"""MCP server registration and tool execution wrappers.
+
+This module defines MCP tools/resources and centralizes RBAC checks,
+metrics emission, cache behavior, and audit logging for each invocation.
+"""
+
 from __future__ import annotations
 
 import time
@@ -24,15 +29,18 @@ mcp = FastMCP(
 
 
 def _cache_key(tool_name: str, *parts: str) -> str:
+    """Build a tenant-scoped cache key.
+
+    Args:
+        tool_name: Tool or resource identifier.
+        *parts: Additional key components.
+
+    Returns:
+        Namespaced cache key string.
+    """
     tenant_id = current_tenant_id(settings.default_tenant_id)
     encoded_parts = ":".join(parts)
     return f"cache:{tool_name}:{tenant_id}:{encoded_parts}"
-
-# Execute a tool with observability and access control
-# This function centralizes the common patterns of:
-# - Checking RBAC permissions for the tool
-# - Tracking tool call latency and count with Prometheus metrics
-# - Auditing tool calls with details like arguments, outcome, duration, and status
 
 def _execute_tool(
     *,
@@ -41,6 +49,18 @@ def _execute_tool(
     arguments: dict[str, object],
     fn,
 ) -> dict:
+    """Execute a tool function with shared guardrails and telemetry.
+
+    Args:
+        tool_name: Registered MCP tool name.
+        write: Whether the tool performs a write operation.
+        arguments: Input arguments used for audit payloads.
+        fn: Callable that executes business logic.
+
+    Returns:
+        Tool result dictionary. Authorization and unexpected failures are
+        converted into structured ``ok=False`` responses.
+    """
     start = time.perf_counter()
     status = "success"
     outcome: dict[str, object] | None = None
@@ -63,7 +83,7 @@ def _execute_tool(
         TOOL_CALL_COUNT.labels(tool=tool_name, status=status).inc()
         return {"ok": False, "message": f"Unexpected tool failure: {exc}"}
     finally:
-        duration_ms = (time.perf_counter() - start) * 1000.0 
+        duration_ms = (time.perf_counter() - start) * 1000.0
         audit_tool_call(
             tool_name=tool_name,
             status=status,
@@ -75,9 +95,17 @@ def _execute_tool(
 
 @mcp.tool()
 def get_order_status_tool(order_id: str) -> dict:
-    """Read-only: get the current order status, tracking, and refund eligibility."""
+    """Fetch order status with Redis read-through cache.
+
+    Args:
+        order_id: Order identifier.
+
+    Returns:
+        Order status payload from cache or database-backed domain service.
+    """
 
     def _resolve() -> dict:
+        """Resolve order status from cache or domain service."""
         key = _cache_key("get_order_status_tool", order_id)
         cached = cache_client.get_json(key)
         if cached is not None:
@@ -99,9 +127,19 @@ def get_order_status_tool(order_id: str) -> dict:
 
 @mcp.tool()
 def create_refund_request(order_id: str, reason: str, approved_by_human: bool = False) -> dict:
-    """Write action: create a refund request. This should require approval in the client."""
+    """Create a refund request and invalidate order-status cache on success.
+
+    Args:
+        order_id: Order identifier.
+        reason: Refund reason text.
+        approved_by_human: Human approval marker enforced by business rules.
+
+    Returns:
+        Result dictionary with success metadata or rejection details.
+    """
 
     def _resolve() -> dict:
+        """Execute refund creation and handle related cache invalidation."""
         if not settings.orders_write_enabled:
             return {"ok": False, "message": "Write tools are disabled in this environment."}
 
@@ -132,7 +170,11 @@ def create_refund_request(order_id: str, reason: str, approved_by_human: bool = 
 
 @mcp.resource("policy://returns")
 def get_return_policy_resource() -> str:
-    """Read-only company return policy."""
+    """Return policy resource with Redis caching.
+
+    Returns:
+        Return policy text.
+    """
     key = _cache_key("get_return_policy_resource", "policy")
     cached = cache_client.get_json(key)
     if cached is not None:
