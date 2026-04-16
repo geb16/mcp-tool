@@ -1,3 +1,5 @@
+"""Pytest fixtures and environment defaults for isolated integration tests."""
+
 import os
 
 os.environ.setdefault("APP_ENV", "test")
@@ -14,6 +16,7 @@ from enterprise_mcp.data.db import Base, engine, init_database
 
 @pytest.fixture(autouse=True)
 def reset_database() -> None:
+    """Reset database schema and seed defaults before each test."""
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     init_database()
