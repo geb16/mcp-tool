@@ -1,3 +1,9 @@
+"""Centralized runtime configuration.
+
+This module exposes strongly-typed settings loaded from environment variables
+and environment-specific ``.env`` files.
+"""
+
 import os
 from typing import Literal
 
@@ -8,6 +14,11 @@ _ENV_NAME = os.getenv("APP_ENV", "dev")
 
 
 class Settings(BaseSettings):
+    """Application settings model.
+
+    Values are loaded from the process environment first, then from
+    ``.env`` and ``.env.<APP_ENV>`` files.
+    """
     model_config = SettingsConfigDict(
         env_file=(".env", f".env.{_ENV_NAME}"),
         env_file_encoding="utf-8",
@@ -47,6 +58,7 @@ class Settings(BaseSettings):
     @computed_field(return_type=set[str])
     @property 
     def allowed_api_keys(self) -> set[str]:
+        """Return the accepted API key set after normalization."""
         values: set[str] = set()
         if self.mcp_api_key:
             values.add(self.mcp_api_key.strip())
@@ -57,16 +69,19 @@ class Settings(BaseSettings):
     @computed_field(return_type=set[str])
     @property
     def read_roles(self) -> set[str]:
+        """Return parsed roles allowed to execute read tools/resources."""
         return {v.strip() for v in self.rbac_read_roles.split(",") if v.strip()}
 
     @computed_field(return_type=set[str])
     @property
     def write_roles(self) -> set[str]:
+        """Return parsed roles allowed to execute write tools."""
         return {v.strip() for v in self.rbac_write_roles.split(",") if v.strip()}
 
     @computed_field(return_type=str)
     @property
     def primary_api_key(self) -> str:
+        """Return one configured API key for convenience client wiring."""
         return next(iter(self.allowed_api_keys), "")
 
 
