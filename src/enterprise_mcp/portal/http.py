@@ -1,3 +1,9 @@
+"""Portal HTTP handlers.
+
+This module exposes customer-facing chat endpoints and admin/staff endpoints
+for approvals, tenant agent role assignment, and operational snapshots.
+"""
+
 from __future__ import annotations
 
 from starlette.requests import Request
@@ -15,14 +21,17 @@ from enterprise_mcp.portal.ui import ADMIN_HTML, CUSTOMER_HTML
 
 
 def customer_page(_request: Request) -> HTMLResponse:
+    """Serve customer portal UI."""
     return HTMLResponse(CUSTOMER_HTML)
 
 
 def admin_page(_request: Request) -> HTMLResponse:
+    """Serve admin portal UI."""
     return HTMLResponse(ADMIN_HTML)
 
 
 async def customer_chat_api(request: Request) -> JSONResponse:
+    """Process customer chat requests."""
     try:
         payload = await request.json()
     except Exception:
@@ -62,6 +71,7 @@ async def customer_chat_api(request: Request) -> JSONResponse:
 
 
 async def customer_history_api(request: Request) -> JSONResponse:
+    """Return incremental customer chat history for polling clients."""
     session_id = request.query_params.get("session_id", "").strip()
     tenant_id = request.query_params.get("tenant_id", settings.default_tenant_id).strip()
     after_id_raw = request.query_params.get("after_id", "0").strip()
@@ -90,6 +100,7 @@ async def customer_history_api(request: Request) -> JSONResponse:
 
 
 async def admin_state_api(request: Request) -> JSONResponse:
+    """Return admin dashboard state for one tenant."""
     auth_error = _ensure_admin(request)
     if auth_error:
         return auth_error
@@ -99,6 +110,7 @@ async def admin_state_api(request: Request) -> JSONResponse:
 
 
 async def admin_set_role_api(request: Request) -> JSONResponse:
+    """Set tenant-assigned agent role."""
     auth_error = _ensure_admin(request)
     if auth_error:
         return auth_error
@@ -117,6 +129,7 @@ async def admin_set_role_api(request: Request) -> JSONResponse:
 
 
 async def admin_decide_approval_api(request: Request) -> JSONResponse:
+    """Approve or reject a queued tool approval request."""
     auth_error = _ensure_admin(request)
     if auth_error:
         return auth_error
@@ -156,6 +169,14 @@ async def admin_decide_approval_api(request: Request) -> JSONResponse:
 
 
 def _ensure_admin(request: Request) -> JSONResponse | None:
+    """Validate admin API key header.
+
+    Args:
+        request: Incoming request.
+
+    Returns:
+        ``None`` when valid, otherwise a 401 response.
+    """
     provided = request.headers.get("x-admin-api-key", "").strip()
     if not provided:
         return JSONResponse({"error": "x-admin-api-key header is required."}, status_code=401)
