@@ -113,4 +113,10 @@ def _is_open_endpoint(path: str) -> bool:
         return True
 
     # Training UI routes are intentionally open in dev/test.
-    return path.startswith("/trainer")
+    if path.startswith("/trainer"):
+        return True
+
+    if path in {"/portal/chat", "/portal/admin"}:
+        return True
+
+    return path.startswith("/portal/api/customer/")
