@@ -1,3 +1,9 @@
+"""HTTP request security middleware.
+
+This middleware enforces API key authentication, tenant/role header checks,
+rate limits, and request/trace correlation headers for HTTP routes.
+"""
+
 from __future__ import annotations
 
 import time
@@ -20,9 +26,19 @@ from enterprise_mcp.security.rate_limit import rate_limiter
 
 OPEN_ENDPOINTS = {"/healthz", "/metrics"}
 
-# 
 class RequestSecurityMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):  # call_next is the next middleware or actual request handler
+    """Apply request authentication, context initialization, and metrics."""
+
+    async def dispatch(self, request: Request, call_next):
+        """Process one request through security and observability stages.
+
+        Args:
+            request: Incoming HTTP request.
+            call_next: Downstream application callable.
+
+        Returns:
+            Final HTTP response with request/trace headers.
+        """
         start = time.perf_counter()
         request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
         trace_id = request.headers.get("x-trace-id") or uuid.uuid4().hex
@@ -51,6 +67,14 @@ class RequestSecurityMiddleware(BaseHTTPMiddleware):
             principal_var.reset(principal_token)
 
     def _authenticate(self, request: Request) -> Response | None:
+        """Authenticate and authorize request headers.
+
+        Args:
+            request: Incoming HTTP request.
+
+        Returns:
+            ``None`` when request is accepted, or an error response.
+        """
         provided_key = _extract_api_key(request)
         if settings.allowed_api_keys and provided_key not in settings.allowed_api_keys:
             return JSONResponse({"error": "Invalid API key"}, status_code=401)
@@ -81,6 +105,7 @@ class RequestSecurityMiddleware(BaseHTTPMiddleware):
         return None
 
     def _finalize(self, response: Response, request: Request, start: float) -> Response:
+        """Attach tracing headers and record HTTP metrics."""
         response.headers["x-request-id"] = request_id_var.get()
         response.headers["x-trace-id"] = trace_id_var.get()
         elapsed = time.perf_counter() - start
@@ -91,6 +116,15 @@ class RequestSecurityMiddleware(BaseHTTPMiddleware):
 
 
 def _extract_api_key(request: Request) -> str:
+    """Extract API key from standard headers.
+
+    Args:
+        request: Incoming HTTP request.
+
+    Returns:
+        API key from ``x-api-key`` or Bearer auth header; empty string if
+        neither is present.
+    """
     header_key = request.headers.get("x-api-key", "").strip()
     if header_key:
         return header_key
@@ -103,12 +137,14 @@ def _extract_api_key(request: Request) -> str:
 
 
 def _principal_name(api_key: str) -> str:
+    """Build a redacted principal name for logging context."""
     if not api_key:
         return "anonymous"
     return f"api_key_***{api_key[-4:]}"
 
 
 def _is_open_endpoint(path: str) -> bool:
+    """Return whether an endpoint bypasses middleware authentication."""
     if path in OPEN_ENDPOINTS:
         return True
 
