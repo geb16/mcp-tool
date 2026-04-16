@@ -1,3 +1,9 @@
+"""Prometheus metrics and instrumentation helpers.
+
+Defines counters/histograms used across HTTP transport, tools, cache events,
+and rate-limiting decisions.
+"""
+
 import time
 from contextlib import contextmanager
 
@@ -39,16 +45,13 @@ RATE_LIMIT_EVENTS = Counter(
     ["result"],
 )
 
-# what is @contextmanager?
-# Anwer: @contextmanager is a decorator in Python that allows you to define a context manager using a generator function. 
-# context manager is an object that defines the runtime context to be established when executing a with statement. 
-# The @contextmanager decorator simplifies the process of creating context managers by allowing you to write setup and 
-# teardown code in a single function, using yield to separate the two phases. When the with block is entered, the code 
-# before yield is executed (setup), and when the block is exited, the code after yield is executed (teardown), even 
-# if an exception occurs.
-
-@contextmanager 
+@contextmanager
 def track_tool_latency(tool_name: str):
+    """Measure and publish tool call latency.
+
+    Args:
+        tool_name: Tool identifier used for histogram label.
+    """
     start = time.perf_counter()
     try:
         yield
@@ -57,4 +60,9 @@ def track_tool_latency(tool_name: str):
 
 
 def metrics_response() -> tuple[bytes, str]:
+    """Build HTTP response payload for Prometheus scraping.
+
+    Returns:
+        Tuple of encoded metrics payload and content-type header value.
+    """
     return generate_latest(), CONTENT_TYPE_LATEST

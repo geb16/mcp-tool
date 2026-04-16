@@ -1,3 +1,9 @@
+"""Tool audit logging utilities.
+
+This module emits structured audit records for every tool invocation and keeps
+a short in-memory event history for UI inspection.
+"""
+
 from datetime import UTC, datetime
 
 from enterprise_mcp.logging import get_logger
@@ -15,6 +21,15 @@ def audit_tool_call(
     arguments: dict[str, object],
     outcome: dict[str, object] | None = None,
 ) -> None:
+    """Emit an audit event for one tool call.
+
+    Args:
+        tool_name: Tool identifier.
+        status: Execution status label.
+        duration_ms: Execution duration in milliseconds.
+        arguments: Tool input arguments.
+        outcome: Tool result payload when available.
+    """
     ctx = get_request_context()
     event = {
         "timestamp": datetime.now(UTC).isoformat(),
