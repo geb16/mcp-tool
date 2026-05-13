@@ -23,6 +23,10 @@
     let isSending = false;
     let isRefreshing = false;
 
+    //we escape HTML in messages and table cells to prevent XSS, since these can contain arbitrary content from the model or user input
+    // replacing &, <, >, ", ' with their HTML entities to ensure they are displayed as text rather than interpreted as HTML tags or attributes
+    //e.g. if the model outputs a message like: `<script>alert('XSS')</script>` it will be displayed safely(as e.g. &lt;script&gt;alert('XSS')&lt;/script&gt;) in the chat window instead of executing as a script
+    // this is a simple implementation and may not cover all edge cases, but it should be sufficient for basic usage in this trainer interface
     function escapeHtml(s) {
       return s
         .replaceAll('&', '&amp;')
